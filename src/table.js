@@ -176,20 +176,23 @@ export class Table {
 		state.handNumber = this.gameState.handNumber; // keep counter; applyDeal increments
 
 		// Shuffle + deal. Retry dealing up to a few times if everyone declines (handled in
-		// decline path). First bidder defaults to seat 0.
+		// decline path). First bidder is chosen randomly each hand.
 		const deck = shuffledDeckFor(playerCount);
 		const dealt = dealInitialHands(playerCount, deck);
+		const seatIndices = state.players.map((p) => p.seatIndex);
+		const firstBidderSeat = seatIndices[Math.floor(Math.random() * seatIndices.length)];
 		state = applyDeal(state, {
 			hands: dealt.hands,
 			kitty: dealt.kitty,
-			firstBidderSeat: 0,
+			firstBidderSeat,
 		});
 		this.gameState = state;
 		this.readySet.clear();
 		const modeLabel = mode === "double" ? "4-player" : mode === "pair" ? "2-player" : "3-player";
 		const startVerb = mode === "pair" ? "plays" : "bids";
+		const firstBidderName = state.players.find((p) => p.seatIndex === firstBidderSeat)?.name ?? "Unknown";
 		this.pushNotification(
-			`Hand ${state.handNumber} dealt (${modeLabel}). ${state.players[0].name} ${startVerb} first.`,
+			`Hand ${state.handNumber} dealt (${modeLabel}). ${firstBidderName} ${startVerb} first.`,
 		);
 		this.emitChange();
 	}
