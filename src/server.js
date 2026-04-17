@@ -118,6 +118,11 @@ function startServer({ port = PORT, host = HOST } = {}) {
 			const session = sessions.findBySocket(socket);
 			if (session) {
 				session.socket = null;
+				const table = registry.get(session.tableId);
+				if (table && session.seatIndex !== null) {
+					table.setConnected(session.seatIndex, false);
+					broadcastTableState(table, sessions);
+				}
 			}
 		});
 	});
@@ -140,11 +145,7 @@ function handleClientMessage({ socket, msg, sessions, registry }) {
 			return;
 		case CLIENT_MESSAGE_TYPES.CREATE_TABLE: {
 			const opts = msg.options ?? {};
-			const table = registry.create({
-				maxSeats: opts.maxSeats,
-				initialStack: opts.initialStack,
-				turnTimeoutMs: opts.turnTimeoutMs,
-			});
+			const table = registry.create({ maxSeats: opts.maxSeats });
 			send(socket, SERVER_MESSAGE_TYPES.SESSION, {
 				tableId: table.tableId,
 				seatIndex: null,
@@ -172,6 +173,7 @@ function handleClientMessage({ socket, msg, sessions, registry }) {
 						sendError(socket, ERROR_CODES.INVALID_SESSION, res.error);
 						return;
 					}
+					table.setConnected(session.seatIndex, true);
 					send(socket, SERVER_MESSAGE_TYPES.SESSION, {
 						tableId: table.tableId,
 						seatIndex: session.seatIndex,
@@ -207,6 +209,7 @@ function handleClientMessage({ socket, msg, sessions, registry }) {
 					createdAt: Date.now(),
 				});
 			}
+			table.setConnected(res.seatIndex, true);
 			send(socket, SERVER_MESSAGE_TYPES.SESSION, {
 				tableId: table.tableId,
 				seatIndex: res.seatIndex,
@@ -243,6 +246,36 @@ function handleClientMessage({ socket, msg, sessions, registry }) {
 				return;
 			}
 			table.ready(session.token);
+			broadcastTableState(table, sessions);
+			return;
+		}
+		case CLIENT_MESSAGE_TYPES.KICK_PLAYER: {
+			const session = sessions.findBySocket(socket);
+			if (!session) {
+				sendError(socket, ERROR_CODES.INVALID_SESSION, "not at a table");
+				return;
+			}
+			const table = registry.get(session.tableId);
+			if (!table) {
+				sendError(socket, ERROR_CODES.UNKNOWN_TABLE, "no such table");
+				return;
+			}
+			const res = table.kick({
+				requesterToken: session.token,
+				targetSeatIndex: msg.seatIndex,
+			});
+			if (res.error) {
+				sendError(socket, ERROR_CODES.INVALID_ACTION, res.error);
+				return;
+			}
+			// Notify the kicked player and drop their session.
+			if (res.targetToken) {
+				const kickedSession = sessions.get(res.targetToken);
+				if (kickedSession?.socket) {
+					sendError(kickedSession.socket, ERROR_CODES.KICKED, "You were kicked from the table.");
+				}
+				sessions.drop(res.targetToken);
+			}
 			broadcastTableState(table, sessions);
 			return;
 		}
@@ -313,6 +346,10 @@ function mapErrorCode(error) {
 			return ERROR_CODES.INVALID_ACTION;
 		case "hand in progress":
 			return ERROR_CODES.HAND_IN_PROGRESS;
+		case "only seat 0 can kick players":
+		case "target seat not found":
+		case "cannot kick yourself":
+			return ERROR_CODES.INVALID_ACTION;
 		default:
 			return ERROR_CODES.BAD_REQUEST;
 	}

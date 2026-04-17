@@ -9,6 +9,7 @@ export const CLIENT_MESSAGE_TYPES = Object.freeze({
 	DECLINE_LANDLORD: "decline_landlord",
 	PLAY_CARDS: "play_cards",
 	PASS: "pass",
+	KICK_PLAYER: "kick_player",
 	PING: "ping",
 });
 
@@ -31,6 +32,7 @@ export const ERROR_CODES = Object.freeze({
 	INVALID_SESSION: "invalid_session",
 	TABLE_FULL: "table_full",
 	HAND_IN_PROGRESS: "hand_in_progress",
+	KICKED: "kicked",
 	INTERNAL: "internal",
 });
 

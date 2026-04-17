@@ -30,6 +30,7 @@ export class Table {
 		this.notifications = [];
 		this.readySet = new Set(); // seatIndex values who have clicked Ready
 		this.seatsByToken = new Map(); // sessionToken -> seatIndex
+		this.connectedSeats = new Set(); // seatIndex values with a live socket
 	}
 
 	/* ---------------- Seat management ---------------- */
@@ -100,9 +101,43 @@ export class Table {
 		this.gameState.players = this.gameState.players.filter((p) => p.seatIndex !== seatIndex);
 		this.seatsByToken.delete(sessionToken);
 		this.readySet.delete(seatIndex);
+		this.connectedSeats.delete(seatIndex);
 		this.pushNotification(`${player.name} left the table.`);
 		this.emitChange();
 		return { ok: true };
+	}
+
+	kick({ requesterToken, targetSeatIndex }) {
+		const requester = this.getPlayerBySession(requesterToken);
+		if (!requester) return { error: "unknown session" };
+		if (requester.seatIndex !== 0) return { error: "only seat 0 can kick players" };
+		const target = this.getPlayerBySeat(targetSeatIndex);
+		if (!target) return { error: "target seat not found" };
+		if (targetSeatIndex === 0) return { error: "cannot kick yourself" };
+		const targetToken = this.tokenForSeat(targetSeatIndex);
+		if (this.gameState.phase === "playing" || this.gameState.phase === "bidding") {
+			this.pushNotification(`${target.name} was kicked — hand aborted.`);
+			this.abortHand();
+		}
+		this.gameState.players = this.gameState.players.filter((p) => p.seatIndex !== targetSeatIndex);
+		if (targetToken) this.seatsByToken.delete(targetToken);
+		this.readySet.delete(targetSeatIndex);
+		this.connectedSeats.delete(targetSeatIndex);
+		this.pushNotification(`${target.name} was kicked.`);
+		this.emitChange();
+		return { ok: true, targetToken };
+	}
+
+	setConnected(seatIndex, isConnected) {
+		if (isConnected) this.connectedSeats.add(seatIndex);
+		else this.connectedSeats.delete(seatIndex);
+	}
+
+	tokenForSeat(seatIndex) {
+		for (const [token, idx] of this.seatsByToken.entries()) {
+			if (idx === seatIndex) return token;
+		}
+		return null;
 	}
 
 	ready(sessionToken) {
@@ -282,6 +317,7 @@ export class Table {
 				hasPassed: p.hasPassed,
 				score: p.score,
 				ready: this.readySet.has(p.seatIndex),
+				connected: this.connectedSeats.has(p.seatIndex),
 			})),
 			notifications: this.notifications.slice(),
 		};
