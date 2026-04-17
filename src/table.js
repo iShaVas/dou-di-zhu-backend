@@ -13,26 +13,21 @@ import {
 import { dealInitialHands, shuffledDeckFor } from "./doudizhu/deck.js";
 import { createSessionToken } from "./sessionStore.js";
 
-const MIN_PLAYERS = 3;
+const MIN_PLAYERS = 2;
 const DEFAULT_MAX_SEATS = 4;
-const DEFAULT_TURN_TIMEOUT_MS = 60_000;
 const MAX_NOTIFICATIONS = 8;
 
 export class Table {
 	constructor({
 		tableId,
 		maxSeats = DEFAULT_MAX_SEATS,
-		turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS,
 		onChange = () => {},
 	}) {
 		this.tableId = tableId;
-		this.maxSeats = Math.max(MIN_PLAYERS, Math.min(maxSeats, 4));
-		this.turnTimeoutMs = turnTimeoutMs;
+		this.maxSeats = Math.max(2, Math.min(maxSeats ?? DEFAULT_MAX_SEATS, 4));
 		this.onChange = onChange;
 		this.gameState = createInitialGameState({ mode: "single", players: [] });
 		this.notifications = [];
-		this.currentTurnToken = null;
-		this.turnTimer = null;
 		this.readySet = new Set(); // seatIndex values who have clicked Ready
 		this.seatsByToken = new Map(); // sessionToken -> seatIndex
 	}
@@ -132,7 +127,7 @@ export class Table {
 	startHand() {
 		const playerCount = this.gameState.players.length;
 		if (playerCount < MIN_PLAYERS) return;
-		const mode = playerCount === 4 ? "double" : "single";
+		const mode = playerCount === 4 ? "double" : playerCount === 2 ? "pair" : "single";
 		// Preserve running scores across hands.
 		const carriedScores = new Map(this.gameState.players.map((p) => [p.seatIndex, p.score]));
 		let state = createInitialGameState({
@@ -156,16 +151,15 @@ export class Table {
 		});
 		this.gameState = state;
 		this.readySet.clear();
-		this.clearTurnTimer();
-		this.startBidTimer(state.bidTurnSeatIndex);
+		const modeLabel = mode === "double" ? "4-player" : mode === "pair" ? "2-player" : "3-player";
+		const startVerb = mode === "pair" ? "plays" : "bids";
 		this.pushNotification(
-			`Hand ${state.handNumber} dealt (${mode === "double" ? "4-player" : "3-player"}). ${state.players[0].name} bids first.`,
+			`Hand ${state.handNumber} dealt (${modeLabel}). ${state.players[0].name} ${startVerb} first.`,
 		);
 		this.emitChange();
 	}
 
 	abortHand() {
-		this.clearTurnTimer();
 		this.gameState = {
 			...this.gameState,
 			phase: "waiting",
@@ -187,24 +181,20 @@ export class Table {
 
 	/* ---------------- Actions ---------------- */
 
-	claimLandlord({ sessionToken, turnToken }) {
+	claimLandlord({ sessionToken }) {
 		const player = this.getPlayerBySession(sessionToken);
 		if (!player) return { error: "unknown session" };
-		if (turnToken && turnToken !== this.currentTurnToken) return { error: "stale turn token" };
 		const res = applyClaimLandlord(this.gameState, player.seatIndex);
 		if (res.error) return res;
 		this.gameState = res.state;
-		this.clearTurnTimer();
-		this.startPlayTimer(this.gameState.turnSeatIndex);
 		this.pushNotification(`${player.name} is the landlord.`);
 		this.emitChange();
 		return { ok: true };
 	}
 
-	declineLandlord({ sessionToken, turnToken }) {
+	declineLandlord({ sessionToken }) {
 		const player = this.getPlayerBySession(sessionToken);
 		if (!player) return { error: "unknown session" };
-		if (turnToken && turnToken !== this.currentTurnToken) return { error: "stale turn token" };
 		const res = applyDeclineLandlord(this.gameState, player.seatIndex);
 		if (res.error) return res;
 		if (res.redeal) {
@@ -215,110 +205,43 @@ export class Table {
 			return { ok: true };
 		}
 		this.gameState = res.state;
-		this.clearTurnTimer();
-		this.startBidTimer(this.gameState.bidTurnSeatIndex);
 		this.pushNotification(`${player.name} declined.`);
 		this.emitChange();
 		return { ok: true };
 	}
 
-	playCards({ sessionToken, turnToken, cards }) {
+	playCards({ sessionToken, cards }) {
 		const player = this.getPlayerBySession(sessionToken);
 		if (!player) return { error: "unknown session" };
-		if (turnToken && turnToken !== this.currentTurnToken) return { error: "stale turn token" };
 		const res = applyPlayCards(this.gameState, player.seatIndex, cards);
 		if (res.error) return res;
 		this.gameState = res.state;
-		this.clearTurnTimer();
 		const comboName = res.state.lastMove?.combo?.type ?? "move";
 		this.pushNotification(`${player.name} played ${comboName} (${cards.length}).`);
 		if (res.handFinished) {
 			this.gameState = awardPoints(this.gameState);
-			this.pushNotification(
-				`${res.state.winnerSide === "landlord" ? "Landlord" : "Farmers"} win the hand.`,
-			);
-		} else {
-			this.startPlayTimer(this.gameState.turnSeatIndex);
+			let winMsg;
+			if (this.gameState.mode === "pair") {
+				const winner = this.getPlayerBySeat(res.state.winnerSide);
+				winMsg = `${winner?.name ?? "Unknown"} wins the hand.`;
+			} else {
+				winMsg = `${res.state.winnerSide === "landlord" ? "Landlord" : "Farmers"} win the hand.`;
+			}
+			this.pushNotification(winMsg);
 		}
 		this.emitChange();
 		return { ok: true };
 	}
 
-	pass({ sessionToken, turnToken }) {
+	pass({ sessionToken }) {
 		const player = this.getPlayerBySession(sessionToken);
 		if (!player) return { error: "unknown session" };
-		if (turnToken && turnToken !== this.currentTurnToken) return { error: "stale turn token" };
 		const res = applyPass(this.gameState, player.seatIndex);
 		if (res.error) return res;
 		this.gameState = res.state;
-		this.clearTurnTimer();
 		this.pushNotification(`${player.name} passed.`);
-		this.startPlayTimer(this.gameState.turnSeatIndex);
 		this.emitChange();
 		return { ok: true };
-	}
-
-	/* ---------------- Turn timers ---------------- */
-
-	mintTurnToken() {
-		this.currentTurnToken = createSessionToken();
-		return this.currentTurnToken;
-	}
-
-	startBidTimer(seatIndex) {
-		this.mintTurnToken();
-		const token = this.currentTurnToken;
-		this.turnTimer = setTimeout(() => {
-			if (
-				this.currentTurnToken === token &&
-				this.gameState.phase === "bidding" &&
-				this.gameState.bidTurnSeatIndex === seatIndex
-			) {
-				this.declineLandlord({ sessionToken: this.tokenForSeat(seatIndex) });
-			}
-		}, this.turnTimeoutMs);
-		if (typeof this.turnTimer?.unref === "function") this.turnTimer.unref();
-	}
-
-	startPlayTimer(seatIndex) {
-		if (seatIndex === null || seatIndex === undefined) return;
-		this.mintTurnToken();
-		const token = this.currentTurnToken;
-		this.turnTimer = setTimeout(() => {
-			if (
-				this.currentTurnToken === token &&
-				this.gameState.phase === "playing" &&
-				this.gameState.turnSeatIndex === seatIndex
-			) {
-				// Auto-pass if possible; otherwise auto-play the lowest single card.
-				if (this.gameState.lastMove) {
-					this.pass({ sessionToken: this.tokenForSeat(seatIndex) });
-				} else {
-					const player = this.getPlayerBySeat(seatIndex);
-					if (player && player.hand.length > 0) {
-						this.playCards({
-							sessionToken: this.tokenForSeat(seatIndex),
-							cards: [player.hand[0]],
-						});
-					}
-				}
-			}
-		}, this.turnTimeoutMs);
-		if (typeof this.turnTimer?.unref === "function") this.turnTimer.unref();
-	}
-
-	clearTurnTimer() {
-		if (this.turnTimer) {
-			clearTimeout(this.turnTimer);
-			this.turnTimer = null;
-		}
-	}
-
-	tokenForSeat(seatIndex) {
-		for (const [token, idx] of this.seatsByToken.entries()) {
-			if (idx === seatIndex) return token;
-		}
-		return null;
 	}
 
 	/* ---------------- Projections for the server transport ---------------- */
@@ -378,7 +301,6 @@ export class Table {
 					score: player.score,
 					isMyTurn: pub.turnSeatIndex === seatIndex ||
 						pub.bidTurnSeatIndex === seatIndex,
-					turnToken: this.currentTurnToken,
 				}
 				: null,
 			updatedAt: new Date().toISOString(),

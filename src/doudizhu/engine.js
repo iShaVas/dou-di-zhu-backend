@@ -3,7 +3,7 @@
 // GameState shape (owned by Table.js; see table.js for the live instance):
 // {
 //   phase: "waiting" | "bidding" | "playing" | "finished",
-//   mode: "single" | "double",
+//   mode: "single" | "double" | "pair",
 //   players: Array<{
 //     seatIndex: number,
 //     name: string,
@@ -52,6 +52,7 @@ export function createInitialGameState({ mode, players }) {
 
 /**
  * Assign dealt hands + kitty to an existing state. Pure wrt the input.
+ * In "pair" mode there is no bidding phase: play starts immediately from firstBidderSeat.
  */
 export function applyDeal(state, { hands, kitty, firstBidderSeat }) {
 	const players = state.players.map((p, i) => ({
@@ -60,19 +61,20 @@ export function applyDeal(state, { hands, kitty, firstBidderSeat }) {
 		role: null,
 		hasPassed: false,
 	}));
-	return {
+	const base = {
 		...state,
-		phase: "bidding",
 		players,
-		kitty: kitty.slice(),
-		turnSeatIndex: null,
-		bidTurnSeatIndex: firstBidderSeat,
+		kitty: [],
 		passesSinceLastMove: 0,
 		lastMove: null,
 		landlordSeatIndex: null,
 		winnerSide: null,
 		handNumber: state.handNumber + 1,
 	};
+	if (state.mode === "pair") {
+		return { ...base, phase: "playing", turnSeatIndex: firstBidderSeat, bidTurnSeatIndex: null };
+	}
+	return { ...base, phase: "bidding", kitty: kitty.slice(), turnSeatIndex: null, bidTurnSeatIndex: firstBidderSeat };
 }
 
 /**
@@ -184,7 +186,8 @@ export function applyPlayCards(state, seatIndex, cards) {
 	let winnerSide = state.winnerSide;
 	if (handFinished) {
 		phase = "finished";
-		winnerSide = player.role === "landlord" ? "landlord" : "farmers";
+		// In "pair" mode there are no roles; store the winning seatIndex directly.
+		winnerSide = state.mode === "pair" ? seatIndex : (player.role === "landlord" ? "landlord" : "farmers");
 	}
 
 	return {
@@ -242,10 +245,19 @@ export function applyPass(state, seatIndex) {
 }
 
 /**
- * Award points after a finished hand. 3P: landlord ±2, farmers ∓1. 4P: landlord ±3, farmers ∓1.
+ * Award points after a finished hand.
+ * 2P: winner +1, loser −1.  3P: landlord ±2, farmers ∓1.  4P: landlord ±3, farmers ∓1.
  */
 export function awardPoints(state) {
-	if (state.phase !== "finished" || !state.winnerSide) return state;
+	if (state.phase !== "finished" || state.winnerSide == null) return state;
+	if (state.mode === "pair") {
+		// winnerSide is the winning seatIndex (number).
+		const players = state.players.map((p) => ({
+			...p,
+			score: p.score + (p.seatIndex === state.winnerSide ? 1 : -1),
+		}));
+		return { ...state, players };
+	}
 	const is4p = state.players.length === 4;
 	const landlordDelta = is4p ? 3 : 2;
 	const farmerDelta = 1;

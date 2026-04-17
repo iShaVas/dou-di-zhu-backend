@@ -46,7 +46,7 @@ export function createDoubleDeck() {
 }
 
 export function shuffledDeckFor(playerCount) {
-	if (playerCount === 3) {
+	if (playerCount === 2 || playerCount === 3) {
 		return secureShuffle(createSingleDeck());
 	}
 	if (playerCount === 4) {
@@ -56,9 +56,10 @@ export function shuffledDeckFor(playerCount) {
 }
 
 // Deal a shuffled deck into per-player hands plus a kitty for the landlord.
-// 3 players: 17 each + 3 kitty.  4 players: 25 each + 8 kitty.
+// 2 players: 27 each + 0 kitty.  3 players: 17 each + 3 kitty.  4 players: 25 each + 8 kitty.
 export function dealInitialHands(playerCount, deck) {
 	const sizeMap = {
+		2: { each: 27, kitty: 0 },
 		3: { each: 17, kitty: 3 },
 		4: { each: 25, kitty: 8 },
 	};

@@ -12,7 +12,7 @@ export class TableRegistry {
 		this.onChange = onChange;
 	}
 
-	create({ maxSeats, initialStack, turnTimeoutMs } = {}) {
+	create({ maxSeats } = {}) {
 		let tableId;
 		do {
 			tableId = createTableId();
@@ -20,8 +20,6 @@ export class TableRegistry {
 		const table = new Table({
 			tableId,
 			maxSeats,
-			initialStack,
-			turnTimeoutMs,
 			onChange: (t) => this.onChange(t),
 		});
 		this.tables.set(tableId, table);
@@ -36,10 +34,6 @@ export class TableRegistry {
 	}
 
 	delete(tableId) {
-		const table = this.tables.get(tableId);
-		if (table) {
-			table.clearTurnTimer();
-		}
 		this.tables.delete(tableId);
 	}
 }
