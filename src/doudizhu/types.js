@@ -1,12 +1,13 @@
 // Domain types for Dou Di Zhu. Cards are strings (card codes); suits are decorative — rank alone
-// drives rules. Jokers are special codes: "sj" = small joker, "bj" = big joker. In double-deck
-// mode we still use the same codes; two copies of each card are allowed and treated as
-// fungible by rank.
+// drives rules. Jokers are special codes: "sj" = small joker, "bj" = big joker.
 //
 // Card code format:
-//   rank ∈ {"3","4","5","6","7","8","9","T","J","Q","K","A","2"} paired with
-//   suit ∈ {"C","D","H","S"}    e.g. "3H", "TS", "JD"
-//   Jokers: "sj", "bj" (no suit).
+//   base = rank+suit (e.g. "3H", "TS") or "sj" / "bj".
+//   rank ∈ {"3","4","5","6","7","8","9","T","J","Q","K","A","2"}
+//   suit ∈ {"C","D","H","S"}
+//   Dealt cards carry an optional instance suffix "#<n>" to disambiguate the two physical copies
+//   that exist in a double deck (e.g. "4D#17", "sj#54"). Parsers below strip the suffix; rules
+//   compare by rank alone, so tagged and untagged codes are interchangeable.
 
 export const RANKS = Object.freeze([
 	"3",
@@ -34,11 +35,16 @@ const RANK_ORDER_MAP = Object.freeze(
 	}, /** @type {Record<string, number>} */ ({})),
 );
 
+// Strip the optional "#N" instance suffix; returns the rank+suit / joker base.
+export function baseCode(card) {
+	const hash = card.indexOf("#");
+	return hash === -1 ? card : card.slice(0, hash);
+}
+
 export function rankOf(card) {
-	if (card === "sj" || card === "bj") {
-		return card;
-	}
-	return card[0];
+	const base = baseCode(card);
+	if (base === "sj" || base === "bj") return base;
+	return base[0];
 }
 
 export function rankOrder(card) {
@@ -46,7 +52,8 @@ export function rankOrder(card) {
 }
 
 export function isJoker(card) {
-	return card === "sj" || card === "bj";
+	const base = baseCode(card);
+	return base === "sj" || base === "bj";
 }
 
 // Ranks that are excluded from straights/double-sequences/airplanes.

@@ -13,21 +13,36 @@ function secureShuffle(array) {
 const SUITS = ["C", "D", "H", "S"];
 const FACE_RANKS = ["3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A", "2"];
 
-// 54-card single deck: 52 faces + 2 jokers.
-export function createSingleDeck() {
+// Build a 54-card single deck (52 faces + 2 jokers), tagging each physical card with a unique
+// "#<n>" instance suffix drawn from the caller-supplied counter. The tag lets callers (client
+// selection, server ownership checks) distinguish two copies of the same rank+suit that appear
+// in a double deck; rule logic continues to compare by rank alone via rankOf()/isJoker().
+function buildSingleDeck(nextId) {
 	const deck = [];
 	for (const rank of FACE_RANKS) {
 		for (const suit of SUITS) {
-			deck.push(`${rank}${suit}`);
+			deck.push(`${rank}${suit}#${nextId()}`);
 		}
 	}
-	deck.push("sj", "bj");
+	deck.push(`sj#${nextId()}`);
+	deck.push(`bj#${nextId()}`);
 	return deck;
 }
 
-// 108-card double deck.
+function makeIdCounter() {
+	let n = 0;
+	return () => n++;
+}
+
+// 54-card single deck: 52 faces + 2 jokers. Each card has a unique instance tag.
+export function createSingleDeck() {
+	return buildSingleDeck(makeIdCounter());
+}
+
+// 108-card double deck. Two single decks concatenated, sharing a counter so every card is unique.
 export function createDoubleDeck() {
-	return [...createSingleDeck(), ...createSingleDeck()];
+	const nextId = makeIdCounter();
+	return [...buildSingleDeck(nextId), ...buildSingleDeck(nextId)];
 }
 
 export function shuffledDeckFor(playerCount) {

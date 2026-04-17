@@ -64,8 +64,8 @@ export function detectCombination(cards, options = {}) {
 	const counts = Object.values(groups).sort((a, b) => b - a);
 	const jokerCount = countJokers(sorted);
 
-	const smallJokerCount = sorted.filter((c) => c === "sj").length;
-	const bigJokerCount = sorted.filter((c) => c === "bj").length;
+	const smallJokerCount = sorted.filter((c) => rankOf(c) === "sj").length;
+	const bigJokerCount = sorted.filter((c) => rankOf(c) === "bj").length;
 	// Super-rocket: 4 jokers (both smalls + both bigs, double-deck 4-player only).
 	if (mode === "double" && size === 4 && smallJokerCount === 2 && bigJokerCount === 2) {
 		return { type: COMBO.SUPER_ROCKET, rank: 0, size: 4, cards: sorted };

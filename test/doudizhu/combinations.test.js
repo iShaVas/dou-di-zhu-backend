@@ -105,6 +105,24 @@ describe("detectCombination — bombs and rockets", () => {
 	});
 });
 
+describe("detectCombination — instance-tagged cards (double deck)", () => {
+	// In a double deck the same rank+suit can occur twice; dealt cards carry a "#N" instance tag
+	// so the two physical copies are distinct strings. Rule logic must classify by rank alone.
+	it("treats same-rank tagged cards as a pair", () => {
+		const c = detect(["4D#17", "4D#88"], "double");
+		assert.equal(c?.type, COMBO.PAIR);
+	});
+	it("detects a bomb built from tagged duplicates across both decks", () => {
+		const c = detect(["5H#1", "5D#2", "5S#3", "5C#4", "5H#55", "5D#56"], "double");
+		assert.equal(c?.type, COMBO.BOMB);
+		assert.equal(c?.size, 6);
+	});
+	it("detects a super-rocket from tagged jokers", () => {
+		const c = detect(["sj#54", "sj#108", "bj#55", "bj#107"], "double");
+		assert.equal(c?.type, COMBO.SUPER_ROCKET);
+	});
+});
+
 describe("canBeat — ordering", () => {
 	it("higher single beats lower single", () => {
 		assert.equal(canBeat(detect(["5H"]), detect(["3H"])), true);
