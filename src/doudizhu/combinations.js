@@ -87,8 +87,9 @@ export function detectCombination(cards, options = {}) {
 		return { type: COMBO.SINGLE, rank: rankOrder(sorted[0]), size: 1, cards: sorted };
 	}
 
-	// Pair: two of same rank, non-joker (jokers don't form natural pairs — that would be a rocket).
-	if (size === 2 && ranksPresent.length === 1 && !isJoker(sorted[0])) {
+	// Pair: two of same rank. Different jokers (sj+bj) can't match here because they have distinct
+	// ranks so ranksPresent.length === 2; same jokers (sj+sj, bj+bj) are valid pairs.
+	if (size === 2 && ranksPresent.length === 1) {
 		return { type: COMBO.PAIR, rank: ro(ranksPresent[0]), size: 2, cards: sorted };
 	}
 
