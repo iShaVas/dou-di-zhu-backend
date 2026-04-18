@@ -47,6 +47,7 @@ export function createInitialGameState({ mode, players }) {
 		landlordSeatIndex: null,
 		winnerSide: null,
 		handNumber: 0,
+		turnHistory: [],
 	};
 }
 
@@ -72,9 +73,9 @@ export function applyDeal(state, { hands, kitty, firstBidderSeat }) {
 		handNumber: state.handNumber + 1,
 	};
 	if (state.mode === "pair") {
-		return { ...base, phase: "playing", turnSeatIndex: firstBidderSeat, bidTurnSeatIndex: null };
+		return { ...base, phase: "playing", turnSeatIndex: firstBidderSeat, bidTurnSeatIndex: null, turnHistory: [] };
 	}
-	return { ...base, phase: "bidding", kitty: kitty.slice(), turnSeatIndex: null, bidTurnSeatIndex: firstBidderSeat };
+	return { ...base, phase: "bidding", kitty: kitty.slice(), turnSeatIndex: null, bidTurnSeatIndex: firstBidderSeat, turnHistory: [] };
 }
 
 /**
@@ -104,6 +105,7 @@ export function applyClaimLandlord(state, seatIndex) {
 			landlordSeatIndex: seatIndex,
 			passesSinceLastMove: 0,
 			lastMove: null,
+			turnHistory: [],
 		},
 	};
 }
@@ -190,6 +192,8 @@ export function applyPlayCards(state, seatIndex, cards) {
 		winnerSide = state.mode === "pair" ? seatIndex : (player.role === "landlord" ? "landlord" : "farmers");
 	}
 
+	const playEntry = { seatIndex, action: "play", cards: cards.slice(), comboType: combo.type };
+	const turnHistory = handFinished ? [] : [...(state.turnHistory ?? []), playEntry];
 	return {
 		ok: true,
 		state: {
@@ -200,6 +204,7 @@ export function applyPlayCards(state, seatIndex, cards) {
 			passesSinceLastMove: 0,
 			lastMove: { seatIndex, combo },
 			winnerSide,
+			turnHistory,
 		},
 		handFinished,
 	};
@@ -217,6 +222,7 @@ export function applyPass(state, seatIndex) {
 
 	const playerCount = state.players.length;
 	const passes = state.passesSinceLastMove + 1;
+	const passEntry = { seatIndex, action: "pass" };
 	// All other players (playerCount - 1) have passed → table clears, last mover acts again.
 	if (passes >= playerCount - 1) {
 		return {
@@ -227,6 +233,7 @@ export function applyPass(state, seatIndex) {
 				passesSinceLastMove: 0,
 				lastMove: null,
 				players: state.players.map((p) => ({ ...p, hasPassed: false })),
+				turnHistory: [],
 			},
 		};
 	}
@@ -240,6 +247,7 @@ export function applyPass(state, seatIndex) {
 			players: state.players.map((p) =>
 				p.seatIndex === seatIndex ? { ...p, hasPassed: true } : p
 			),
+			turnHistory: [...(state.turnHistory ?? []), passEntry],
 		},
 	};
 }
